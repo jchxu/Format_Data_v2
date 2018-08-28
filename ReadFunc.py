@@ -119,6 +119,101 @@ def ReadStd(StdFileName):
     StdFile.release_resources()
     return (StdOwner, StdGoods)
 
+
+
+### 返回字典{合并的单元格坐标:合并单元格左上角坐标(即合并前数值所在单元格的坐标)}
+def UnMergeCell(MergedCellsList):
+    UnMergeIndexDict = {}
+    for item in MergedCellsList:
+        rowlow = item[0]
+        rowhigh = item[1]
+        collow = item[2]
+        colhigh = item[3]
+        for i in range(rowlow,rowhigh):
+            for j in range(collow,colhigh):
+                UnMergeIndexDict[(i,j)] = (rowlow,collow)
+    return (UnMergeIndexDict)
+
+### 去除列表中各元素中的空格 ###
+def StripSpace(List):
+    NewList = []
+    for i in range(len(List)):
+        if type(List[i]) == 'str':
+            NewList.append(List[i].replace(' ',''))
+        else:
+            NewList.append(List[i])
+    return (NewList)
+
+### 查找标题行、货主列、品种列、数量列、到港日期列的index ###
+def FindIndex(Sheet):
+    OwnWords = ['货主', '收货人']
+    GoodWords = ['货性']
+    AmountWords = ['数量','数量（吨）']
+    DateWords = []
+    TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = (0,0,0,0,-1)
+    for i in range(Sheet.nrows):
+        Line = Sheet.row_values(i)
+        if ('货主' in Line) or ('收货人' in Line) :
+            TitleRowIndex = i
+            LineData = StripSpace(Line)
+            for j in range(len(LineData)):
+                if LineData[j] in OwnWords: OwnColIndex = j
+                elif LineData[j] in GoodWords: GoodColIndex = j
+                elif LineData[j] in AmountWords: AmountColIndex = j
+                elif LineData[j] in DateWords: DateColIndex = j
+            break
+    return (TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex)
+
+### 检查货主或品种是否在合并单元格中 ###
+def CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex):
+    OwnRawIndex = j
+    GoodRawIndex = j
+    OwnIndex = OwnColIndex
+    GoodIndex = GoodColIndex
+    if (j,OwnColIndex) in UnMergeIndexDict.keys():
+        (OwnRawIndex, OwnIndex) = UnMergeIndexDict[(j,OwnColIndex)]
+    if (j, GoodColIndex) in UnMergeIndexDict.keys():
+        (GoodRawIndex, GoodIndex) = UnMergeIndexDict[(j,GoodColIndex)]
+    return (OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex)
+
+### 检查名称是否为空，或为合计 ###
+def CheckFlag(OwnName, GoodName, Amount):
+    if ('合计' in OwnName) or ('合计' in GoodName) or ('商家报告' in OwnName) or ('商家报告' in GoodName) or (GoodName.strip() == ''):
+        return False
+    elif (Amount <= 0):
+        return False
+    else:
+        return True
+
+### 检查数量是否在合并单元格中 ###
+def CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex):
+    AmountRawIndex = j
+    AmountIndex = AmountColIndex
+    if (j,AmountColIndex) in UnMergeIndexDict.keys():
+        (AmountRawIndex, AmountIndex) = UnMergeIndexDict[(j,AmountColIndex)]
+    return (AmountRawIndex, AmountIndex)
+
+### 检查合并单元格中纵向合并数量 ###
+def CountMergeCell(UnMergeIndexDict):
+    MergeCount = {}
+    Count = {}
+    UniqueValue = list(set(list(UnMergeIndexDict.values())))
+    for item in UniqueValue:
+        Count[item] = 0
+    for item in UnMergeIndexDict.keys():
+        Count[UnMergeIndexDict[item]] += 1
+    for item in list(UnMergeIndexDict.keys()):
+        MergeCount[item] = Count[UnMergeIndexDict[item]]
+    return (MergeCount)
+
+### 返回合并单元格纵向数量，若非则返回1 ###
+def CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex):
+    AmountRatio = 1
+    if (AmountRawIndex, AmountIndex) in MergeCount.keys():
+        AmountRatio = MergeCount[(AmountRawIndex, AmountIndex)]
+    return (AmountRatio)
+
+
 ### 读取曹妃甸港口数据 ###
 def ReadPort0(PortFilename,PortDate):
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
@@ -140,8 +235,25 @@ def ReadPort2(PortFilename,PortDate):
 ### 读取岚山港口数据 ###
 def ReadPort3(PortFilename,PortDate):
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
+    Sheets = PortFile.sheets()
+    FileData = []
+    for i in range(len(Sheets)):
+        Sheet = PortFile.sheet_by_index(i)
+        UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+        MergeCount = CountMergeCell(UnMergeIndexDict)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet)
+        for j in range(TitleRowIndex + 1, Sheet.nrows):
+            OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
+            OwnName = StripSpace(Sheet.row_values(OwnRawIndex))[OwnIndex]
+            GoodName = StripSpace(Sheet.row_values(GoodRawIndex))[GoodIndex]
+            AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+            AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+            Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+            Flag = CheckFlag(OwnName, GoodName, Amount)
+            if Flag:
+                FileData.append([OwnName, GoodName, Amount, PortDate])
     PortFile.release_resources()
+    return (FileData)
 
 ### 读取连云港港口数据 ###
 def ReadPort4(PortFilename,PortDate):
@@ -185,5 +297,8 @@ def CollectPortData(PortFilesList,StdPort):
         PortFilename = PortFilesList[i]
         PortData = ReadData(PortFilename,PortShortnames[i],PortDates[i])
         print(PortFilename)
-        print(PortData)
-        #AllData.append(PortData)
+        for item in PortData: print(item)
+        AllData += PortData
+    print(AllData)
+
+    #return (AllData)
