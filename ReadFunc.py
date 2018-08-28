@@ -148,7 +148,7 @@ def StripSpace(List):
 def FindIndex(Sheet):
     OwnWords = ['货主', '收货人']
     GoodWords = ['货性']
-    AmountWords = ['数量','数量（吨）']
+    AmountWords = ['数量','数量（吨）','剩余货权量（吨）']
     DateWords = []
     TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = (0,0,0,0,-1)
     for i in range(Sheet.nrows):
@@ -159,7 +159,7 @@ def FindIndex(Sheet):
             for j in range(len(LineData)):
                 if LineData[j] in OwnWords: OwnColIndex = j
                 elif LineData[j] in GoodWords: GoodColIndex = j
-                elif LineData[j] in AmountWords: AmountColIndex = j
+                elif (LineData[j] in AmountWords): AmountColIndex = j
                 elif LineData[j] in DateWords: DateColIndex = j
             break
     return (TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex)
@@ -229,8 +229,25 @@ def ReadPort1(PortFilename,PortDate):
 ### 读取岚桥港口数据 ###
 def ReadPort2(PortFilename,PortDate):
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
+    Sheets = PortFile.sheets()
+    FileData = []
+    for i in range(len(Sheets)):
+        Sheet = PortFile.sheet_by_index(i)
+        UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+        MergeCount = CountMergeCell(UnMergeIndexDict)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet)
+        for j in range(TitleRowIndex + 1, Sheet.nrows):
+            OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
+            OwnName = StripSpace(Sheet.row_values(OwnRawIndex))[OwnIndex]
+            GoodName = StripSpace(Sheet.row_values(GoodRawIndex))[GoodIndex]
+            AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+            AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+            Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+            Flag = CheckFlag(OwnName, GoodName, Amount)
+            if Flag:
+                FileData.append([OwnName, GoodName, Amount, PortDate])
     PortFile.release_resources()
+    return (FileData)
 
 ### 读取岚山港口数据 ###
 def ReadPort3(PortFilename,PortDate):
@@ -297,7 +314,11 @@ def CollectPortData(PortFilesList,StdPort):
         PortFilename = PortFilesList[i]
         PortData = ReadData(PortFilename,PortShortnames[i],PortDates[i])
         print(PortFilename)
+        print(len(PortData))
+        for item in PortData: item.append(PortShortnames[i])
+
         for item in PortData: print(item)
+
         AllData += PortData
     print(AllData)
 
