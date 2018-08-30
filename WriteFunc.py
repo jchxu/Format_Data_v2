@@ -206,6 +206,8 @@ def WritePortsData(PortList,PortsData):
     WorkBook = xlsxwriter.Workbook(filename)
     Sheet1 = WorkBook.add_worksheet()
     Sheet1.freeze_panes(1, 0)
+    for i in range(len(PortsData)+1):
+        Sheet1.set_row(i,16)
     # 格式控制
     StyleTitle = WorkBook.add_format({'bold': 1, 'align': 'center', 'font_color': 'blue'})
     StyleCenter = WorkBook.add_format({'align': 'center'})
@@ -217,6 +219,10 @@ def WritePortsData(PortList,PortsData):
     Sheet1.write(0, 3, '品种',StyleTitle)
     Sheet1.write(0, 4, '数量',StyleTitle)
     Sheet1.write(0, 5, '日期',StyleTitle)
+    Sheet1.set_column(0, 0, 8)
+    Sheet1.set_column(1, 1, 12)
+    Sheet1.set_column(2, 3, 15)
+    Sheet1.set_column(4, 5, 12)
     # 数据行
     for i in range(len(PortsData)):
         Rec = PortsData[i]
