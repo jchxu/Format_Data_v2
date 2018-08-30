@@ -1,5 +1,5 @@
 # coding=utf-8
-import xlsxwriter
+import xlsxwriter,datetime
 
 ### 计算百分比，返回*100的结果，总数为0则全部返回0 ###
 def CalcRatio(Total, Steel, Trade):
@@ -184,3 +184,47 @@ def WriteSummary(Flag,ResFileName,AmountInfo,ShipInfo, PortList, GoodsClassName,
     elif ('txt' in Flag) and ('xlsx' in Flag):
         WriteTXT(ResFileName,AmountInfo, ShipInfo, PortList, GoodsClassName, GoodsClassList)
         WriteExcel(ResFileName,AmountInfo, ShipInfo, PortList, GoodsClassName, GoodsClassList)
+
+### 读取港口数据中的港口顺序 ###
+def PortOrder(PortsData):
+    PortList = []
+    TempList = []
+    for Rec in PortsData:
+        TempList.append(Rec[-1])
+    for i in range(len(TempList)):
+        if i == 0 :
+            PortList.append(TempList[i])
+        else:
+            if TempList[i] not in PortList:
+                PortList.append(TempList[i])
+    return PortList
+
+def WritePortsData(PortList,PortsData):
+    filename = '_'.join(PortList)
+    now = datetime.datetime.now().strftime('%Y%m%d')#_%H%M')
+    filename = filename+'-'+now+'.xlsx'
+    WorkBook = xlsxwriter.Workbook(filename)
+    Sheet1 = WorkBook.add_worksheet()
+    Sheet1.freeze_panes(1, 0)
+    # 格式控制
+    StyleTitle = WorkBook.add_format({'bold': 1, 'align': 'center', 'font_color': 'blue'})
+    StyleCenter = WorkBook.add_format({'align': 'center'})
+    StyleAmount = WorkBook.add_format({'num_format': '#,##0.00'})
+    # 标题行
+    Sheet1.write(0, 0, '原行号',StyleTitle)
+    Sheet1.write(0, 1, '港口名称',StyleTitle)
+    Sheet1.write(0, 2, '货主',StyleTitle)
+    Sheet1.write(0, 3, '品种',StyleTitle)
+    Sheet1.write(0, 4, '数量',StyleTitle)
+    Sheet1.write(0, 5, '日期',StyleTitle)
+    # 数据行
+    for i in range(len(PortsData)):
+        Rec = PortsData[i]
+        Sheet1.write(i+1,0,Rec[0],StyleCenter)
+        Sheet1.write(i+1,1,Rec[5],StyleCenter)
+        Sheet1.write(i+1,2,Rec[1])
+        Sheet1.write(i+1,3,Rec[2])
+        Sheet1.write(i+1,4,Rec[3],StyleAmount)
+        Sheet1.write(i+1,5,Rec[4],StyleCenter)
+    WorkBook.close()
+    print('汇总数据写入"%s"文件中.' % filename)

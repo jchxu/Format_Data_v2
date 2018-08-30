@@ -134,26 +134,27 @@ def UnMergeCell(MergedCellsList):
                 UnMergeIndexDict[(i,j)] = (rowlow,collow)
     return (UnMergeIndexDict)
 
-### 去除列表中各元素中的空格 ###
+### 去除列表中各元素或字符串中的空格 ###
 def StripSpace(List):
-    NewList = []
-    for i in range(len(List)):
-        if type(List[i]) == 'str':
-            NewList.append(List[i].replace(' ',''))
-        else:
-            NewList.append(List[i])
-    return (NewList)
+    if (type(List) == list) :
+        NewList = []
+        for i in range(len(List)):
+            if type(List[i]) == str:
+                NewList.append(List[i].replace(' ',''))
+            else:
+                NewList.append(List[i])
+        return (NewList)
+    elif (type(List) == str) :
+        NewStr = ''
+        NewStr = List.replace(' ', '')
+        return NewStr
 
 ### 查找标题行、货主列、品种列、数量列、到港日期列的index ###
-def FindIndex(Sheet):
-    OwnWords = ['货主', '收货人']
-    GoodWords = ['货性']
-    AmountWords = ['数量','数量（吨）','剩余货权量（吨）']
-    DateWords = []
+def FindIndex(Sheet,OwnWords,GoodWords,AmountWords,DateWords):
     TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = (0,0,0,0,-1)
     for i in range(Sheet.nrows):
         Line = Sheet.row_values(i)
-        if ('货主' in Line) or ('收货人' in Line) :
+        if ('货主' in Line) or ('收货人' in Line) or ('货名' in Line) :
             TitleRowIndex = i
             LineData = StripSpace(Line)
             for j in range(len(LineData)):
@@ -163,6 +164,18 @@ def FindIndex(Sheet):
                 elif LineData[j] in DateWords: DateColIndex = j
             break
     return (TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex)
+
+def FindStopRow(Sheet, StopWords):
+    StopRowIndex = Sheet.nrows
+    for i in range(Sheet.nrows):
+        Line = Sheet.row_values(i)
+        LineData = StripSpace(Line)
+        for j in range(len(LineData)):
+            LineItem = str(LineData[j])
+            for item in StopWords:
+                if item in LineItem:
+                    StopRowIndex = i + 1
+                    return StopRowIndex
 
 ### 检查货主或品种是否在合并单元格中 ###
 def CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex):
@@ -178,9 +191,15 @@ def CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex):
 
 ### 检查名称是否为空，或为合计 ###
 def CheckFlag(OwnName, GoodName, Amount):
-    if ('合计' in OwnName) or ('合计' in GoodName) or ('商家报告' in OwnName) or ('商家报告' in GoodName) or (GoodName.strip() == ''):
+    NameKeyWords = ['总计','合计','统计','商家报告']
+    if (StripSpace(GoodName) == ''):
         return False
-    elif (Amount <= 0):
+    for item in NameKeyWords:
+        if (item in StripSpace(OwnName)) or (item in StripSpace(GoodName)):
+            return False
+    if (type(Amount) not in (int,float)):
+        return False
+    elif (Amount <= 0.0):
         return False
     else:
         return True
@@ -213,21 +232,37 @@ def CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex):
         AmountRatio = MergeCount[(AmountRawIndex, AmountIndex)]
     return (AmountRatio)
 
+### 格式化日期为yyyymmdd ###
+def FormatDate(DateStr, DateCtype):
+    FormatDate = ''
+    if DateCtype == 1:
+        if '.' in DateStr:
+            Flag = (DateStr).count('.')
+            if Flag == 2:  #yy.mm.dd
+                year = DateStr.split('.')[0]
+                month = DateStr.split('.')[1]
+                day = DateStr.split('.')[2]
+                if (len(year) == 2): year = '20' + year
+                if (len(month) == 1): month = '0' + month
+                if (len(day) == 1): day = '0' + day
+                FormatDate = year+month+day
+    elif DateCtype == 3:
+        TempDate = xlrd.xldate_as_tuple(DateStr,0)
+        year = str(TempDate[0])
+        month = str(TempDate[1])
+        day = str(TempDate[2])
+        if (len(year) == 2): year = '20' + year
+        if (len(month) == 1): month = '0' + month
+        if (len(day) == 1): day = '0' + day
+        FormatDate = year + month + day
+    return FormatDate
 
-### 读取曹妃甸港口数据 ###
-def ReadPort0(PortFilename,PortDate):
-    PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
-    PortFile.release_resources()
-
-### 读取京唐港口数据 ###
-def ReadPort1(PortFilename,PortDate):
-    PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
-    PortFile.release_resources()
-
-### 读取岚桥港口数据 ###
-def ReadPort2(PortFilename,PortDate):
+### 读取曹妃甸(实业)港口数据 ###
+def ReadPort01(PortFilename,PortDate):
+    OwnWords = ['货主']
+    GoodWords = ['货种']
+    AmountWords = ['场存数量']
+    DateWords = ['入库时间']
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
     Sheets = PortFile.sheets()
     FileData = []
@@ -235,22 +270,147 @@ def ReadPort2(PortFilename,PortDate):
         Sheet = PortFile.sheet_by_index(i)
         UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
         MergeCount = CountMergeCell(UnMergeIndexDict)
-        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet,OwnWords,GoodWords,AmountWords,DateWords)
         for j in range(TitleRowIndex + 1, Sheet.nrows):
             OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
-            OwnName = StripSpace(Sheet.row_values(OwnRawIndex))[OwnIndex]
-            GoodName = StripSpace(Sheet.row_values(GoodRawIndex))[GoodIndex]
+            OwnName = StripSpace(Sheet.cell_value(OwnRawIndex,OwnIndex))
+            GoodName = StripSpace(Sheet.cell_value(GoodRawIndex,GoodIndex))
+            AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+            AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+            Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+            DateCtype = Sheet.cell(AmountRawIndex,DateColIndex).ctype
+            RecDate = FormatDate(Sheet.cell_value(AmountRawIndex,DateColIndex),DateCtype)
+            Flag = CheckFlag(OwnName, GoodName, Amount)
+            if Flag:
+                FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, RecDate])
+    PortFile.release_resources()
+    return (FileData)
+
+### 读取曹妃甸(弘毅)港口数据 ###
+def ReadPort02(PortFilename,PortDate):
+    OwnWords = ['货主']
+    GoodWords = ['品名']
+    AmountWords = ['结存']
+    DateWords = ['到港日期']
+    StopWords = ['集港车数']
+    PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
+    Sheets = PortFile.sheets()
+    FileData = []
+    for i in range(len(Sheets)):
+        Sheet = PortFile.sheet_by_index(i)
+        if Sheet.name == '散货库存':
+            UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+            MergeCount = CountMergeCell(UnMergeIndexDict)
+            TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet,OwnWords,GoodWords,AmountWords,DateWords)
+            StopRowIndex = FindStopRow(Sheet, StopWords)
+            for j in range(TitleRowIndex + 1, StopRowIndex):
+                OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
+                OwnName = StripSpace(Sheet.cell_value(OwnRawIndex,OwnIndex))
+                GoodName = StripSpace(Sheet.cell_value(GoodRawIndex,GoodIndex))
+                AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+                AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+                Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+                DateCtype = Sheet.cell(AmountRawIndex,DateColIndex).ctype
+                RecDate = FormatDate(Sheet.cell_value(AmountRawIndex,DateColIndex),DateCtype)
+                Flag = CheckFlag(OwnName, GoodName, Amount)
+                if Flag:
+                    FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, RecDate])
+    PortFile.release_resources()
+    return (FileData)
+
+### 读取曹妃甸(矿三)港口数据 ###
+def ReadPort03(PortFilename,PortDate):
+    OwnWords = ['货主']
+    GoodWords = ['货种']
+    AmountWords = ['结存（吨）']
+    DateWords = ['入库日期']
+    StopWords = ['废矿']
+    PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
+    Sheets = PortFile.sheets()
+    FileData = []
+    #for i in range(len(Sheets)):
+    Sheet = PortFile.sheet_by_index(0)
+    UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+    MergeCount = CountMergeCell(UnMergeIndexDict)
+    TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet, OwnWords,GoodWords, AmountWords,DateWords)
+    StopRowIndex = FindStopRow(Sheet, StopWords)
+    for j in range(TitleRowIndex + 1, StopRowIndex):
+        OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex,GoodColIndex)
+        OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+        GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
+        AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+        AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+        Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+        DateCtype = Sheet.cell(AmountRawIndex, DateColIndex).ctype
+        RecDate = FormatDate(Sheet.cell_value(AmountRawIndex, DateColIndex), DateCtype)
+        Flag = CheckFlag(OwnName, GoodName, Amount)
+        if Flag:
+            FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, RecDate])
+    PortFile.release_resources()
+    return (FileData)
+
+### 读取京唐港口数据 ###
+def ReadPort1(PortFilename,PortDate):
+    OwnWords = ['货主']
+    GoodWords = ['货名']
+    AmountWords = ['结存量']
+    DateWords = ['入库时间']
+    PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
+    Sheets = PortFile.sheets()
+    FileData = []
+    for i in range(len(Sheets)):
+        Sheet = PortFile.sheet_by_index(i)
+        UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+        MergeCount = CountMergeCell(UnMergeIndexDict)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet, OwnWords, GoodWords,AmountWords, DateWords)
+        for j in range(TitleRowIndex + 1, Sheet.nrows):
+            OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex,GoodColIndex)
+            OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+            GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
+            AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+            AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+            Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+            DateCtype = Sheet.cell(AmountRawIndex, DateColIndex).ctype
+            RecDate = FormatDate(Sheet.cell_value(AmountRawIndex, DateColIndex), DateCtype)
+            Flag = CheckFlag(OwnName, GoodName, Amount)
+            if Flag:
+                FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, RecDate])
+    PortFile.release_resources()
+    return (FileData)
+
+### 读取岚桥港口数据 ###
+def ReadPort2(PortFilename,PortDate):
+    OwnWords = ['货主']
+    GoodWords = ['货性']
+    AmountWords = ['剩余货权量（吨）']
+    DateWords = ['到港日期']
+    PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
+    Sheets = PortFile.sheets()
+    FileData = []
+    for i in range(len(Sheets)):
+        Sheet = PortFile.sheet_by_index(i)
+        UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+        MergeCount = CountMergeCell(UnMergeIndexDict)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet,OwnWords,GoodWords,AmountWords,DateWords)
+        for j in range(TitleRowIndex + 1, Sheet.nrows):
+            OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
+            OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+            GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
             AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
             AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
             Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
             Flag = CheckFlag(OwnName, GoodName, Amount)
             if Flag:
-                FileData.append([OwnName, GoodName, Amount, PortDate])
+                FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, PortDate])
     PortFile.release_resources()
     return (FileData)
 
 ### 读取岚山港口数据 ###
 def ReadPort3(PortFilename,PortDate):
+    OwnWords = ['货主']
+    GoodWords = ['货性']
+    AmountWords = ['数量（吨）']
+    DateWords = ['到港日期']
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
     Sheets = PortFile.sheets()
     FileData = []
@@ -258,44 +418,116 @@ def ReadPort3(PortFilename,PortDate):
         Sheet = PortFile.sheet_by_index(i)
         UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
         MergeCount = CountMergeCell(UnMergeIndexDict)
-        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet,OwnWords,GoodWords,AmountWords,DateWords)
         for j in range(TitleRowIndex + 1, Sheet.nrows):
             OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
-            OwnName = StripSpace(Sheet.row_values(OwnRawIndex))[OwnIndex]
-            GoodName = StripSpace(Sheet.row_values(GoodRawIndex))[GoodIndex]
+            OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+            GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
             AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
             AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
             Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
             Flag = CheckFlag(OwnName, GoodName, Amount)
             if Flag:
-                FileData.append([OwnName, GoodName, Amount, PortDate])
+                FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, PortDate])
     PortFile.release_resources()
     return (FileData)
 
 ### 读取连云港港口数据 ###
 def ReadPort4(PortFilename,PortDate):
+    OwnWords = ['货主','钢厂及']
+    GoodWords = ['货名','品种']
+    AmountWords = ['数量/吨','港存数','数量','重量']
+    DateWords = ['到港船期','靠港时间','卸船日期','进场日期']
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
+    Sheets = PortFile.sheets()
+    FileData = []
+    for i in range(len(Sheets)):
+        Sheet = PortFile.sheet_by_index(i)
+        UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+        MergeCount = CountMergeCell(UnMergeIndexDict)
+        TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet, OwnWords, GoodWords,AmountWords, DateWords)
+        for j in range(TitleRowIndex + 1, Sheet.nrows):
+            OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex,GoodColIndex)
+            OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+            GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
+            AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+            AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+            Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+            DateCtype = Sheet.cell(AmountRawIndex, DateColIndex).ctype
+            RecDate = FormatDate(Sheet.cell_value(AmountRawIndex, DateColIndex), DateCtype)
+            Flag = CheckFlag(OwnName, GoodName, Amount)
+            if Flag:
+                FileData.append([AmountRawIndex+1, OwnName, GoodName, Amount, RecDate])
     PortFile.release_resources()
+    return (FileData)
 
 ### 读取青岛港口数据 ###
 def ReadPort5(PortFilename,PortDate):
+    OwnWords = ['收货人']
+    GoodWords = ['货名']
+    AmountWords = ['全船结存']
+    DateWords = ['卸船日期']
+    StopWords = ['分类统计']
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
+    Sheets = PortFile.sheets()
+    FileData = []
+    # for i in range(len(Sheets)):
+    Sheet = PortFile.sheet_by_index(0)
+    UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+    MergeCount = CountMergeCell(UnMergeIndexDict)
+    TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet, OwnWords, GoodWords,AmountWords, DateWords)
+    StopRowIndex = FindStopRow(Sheet, StopWords)
+    for j in range(TitleRowIndex + 1, StopRowIndex):
+        OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
+        OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+        GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
+        AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+        AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+        Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+        DateCtype = Sheet.cell(AmountRawIndex, DateColIndex).ctype
+        RecDate = FormatDate(Sheet.cell_value(AmountRawIndex, DateColIndex), DateCtype)
+        Flag = CheckFlag(OwnName, GoodName, Amount)
+        if Flag:
+            FileData.append([AmountRawIndex + 1, OwnName, GoodName, Amount, RecDate])
     PortFile.release_resources()
+    return (FileData)
 
 ### 读取日照港口数据 ###
 def ReadPort6(PortFilename,PortDate):
+    OwnWords = ['收货人（货主）']
+    GoodWords = ['货名']
+    AmountWords = ['当日库存']
+    DateWords = ['卸船日期']
     PortFile = xlrd.open_workbook(PortFilename, formatting_info=True)
-
+    Sheets = PortFile.sheets()
+    FileData = []
+    # for i in range(len(Sheets)):
+    Sheet = PortFile.sheet_by_index(0)
+    UnMergeIndexDict = UnMergeCell(Sheet.merged_cells)
+    MergeCount = CountMergeCell(UnMergeIndexDict)
+    TitleRowIndex, OwnColIndex, GoodColIndex, AmountColIndex, DateColIndex = FindIndex(Sheet, OwnWords, GoodWords,AmountWords, DateWords)
+    for j in range(TitleRowIndex + 1, Sheet.nrows):
+        OwnRawIndex, OwnIndex, GoodRawIndex, GoodIndex = CheckNameMerge(UnMergeIndexDict, j, OwnColIndex, GoodColIndex)
+        OwnName = StripSpace(Sheet.cell_value(OwnRawIndex, OwnIndex))
+        GoodName = StripSpace(Sheet.cell_value(GoodRawIndex, GoodIndex))
+        AmountRawIndex, AmountIndex = CheckAmountMerge(UnMergeIndexDict, j, AmountColIndex)
+        AmountRatio = CheckAmountRatio(MergeCount, AmountRawIndex, AmountIndex)
+        Amount = StripSpace(Sheet.row_values(AmountRawIndex))[AmountIndex] * AmountRatio
+        DateCtype = Sheet.cell(AmountRawIndex, DateColIndex).ctype
+        RecDate = FormatDate(Sheet.cell_value(AmountRawIndex, DateColIndex), DateCtype)
+        Flag = CheckFlag(OwnName, GoodName, Amount)
+        if Flag:
+            FileData.append([AmountRawIndex + 1, OwnName, GoodName, Amount, RecDate])
     PortFile.release_resources()
-
+    return (FileData)
 
 ### 根据港口名称读取数据 ###
 #'曹妃甸','京唐','岚桥','岚山','连云港','青岛','日照'
 def ReadData(PortFilename,PortShortname,PortDate):
     PortData = []
-    if PortShortname == '曹妃甸': PortData = ReadPort0(PortFilename,PortDate)
+    if PortShortname == '曹妃甸实业': PortData = ReadPort01(PortFilename,PortDate)
+    elif PortShortname == '曹妃甸弘毅': PortData = ReadPort02(PortFilename,PortDate)
+    elif PortShortname == '曹妃甸矿三': PortData = ReadPort03(PortFilename,PortDate)
     elif PortShortname == '京唐': PortData = ReadPort1(PortFilename,PortDate)
     elif PortShortname == '岚桥': PortData = ReadPort2(PortFilename,PortDate)
     elif PortShortname == '岚山': PortData = ReadPort3(PortFilename,PortDate)
@@ -303,6 +535,21 @@ def ReadData(PortFilename,PortShortname,PortDate):
     elif PortShortname == '青岛': PortData = ReadPort5(PortFilename,PortDate)
     elif PortShortname == '日照': PortData = ReadPort6(PortFilename,PortDate)
     else: print(PortFilename,'港口名称或港口名称不在标准名称中')
+    return PortData
+
+### 检查吨/万吨？ ###
+def CheckTons(PortData):
+    ref = 50
+    templist = []
+    for item in PortData:
+        if item[3] <= ref:
+            templist.append(item[3])
+    AllNum = len(PortData)
+    SmallNum = len(templist)
+    #print(SmallNum,AllNum)
+    if SmallNum > 0.99*AllNum:
+        for item in PortData:
+            item[3] = item[3]*10000
     return PortData
 
 ### 读取各港口数据 ###
@@ -313,13 +560,9 @@ def CollectPortData(PortFilesList,StdPort):
     for i in range(0,len(PortFilesList)):
         PortFilename = PortFilesList[i]
         PortData = ReadData(PortFilename,PortShortnames[i],PortDates[i])
-        print(PortFilename)
-        print(len(PortData))
+        PortData = CheckTons(PortData)
         for item in PortData: item.append(PortShortnames[i])
-
-        for item in PortData: print(item)
-
+        print('已读取"%s"文件中的%d条数据.' % (PortFilename,len(PortData)))
+        #for item in PortData: print(item)
         AllData += PortData
-    print(AllData)
-
-    #return (AllData)
+    return (AllData)
