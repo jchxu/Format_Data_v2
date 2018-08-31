@@ -71,14 +71,22 @@ def ReadSource(SourceFileName):
     ArrivalDate = []
     SourceFile = xlrd.open_workbook(SourceFileName, 'r')
     Sheet = SourceFile.sheet_by_index(0)
+    Line1 = Sheet.row_values(0)
+    for i in range(len(Line1)):
+        if '货主' in Line1[i]: OwnerIndex = i
+        if '品种' in Line1[i]: GoodIndex = i
+        if ('数量' in Line1[i]) or ('库存' in Line1[i]): AmountIndex = i
+        if '港口' in Line1[i]: PortIndex = i
+        if '日期' in Line1[i]: DateIndex = i
+    #print(OwnerIndex,GoodIndex,AmountIndex,PortIndex,DateIndex)
     for i in range(1, Sheet.nrows):
         Line = Sheet.row_values(i)
-        Owner.append(Line[0].replace(' ',''))
-        Goods.append(Line[1].replace(' ',''))
-        Amount.append(Line[2])
-        Port.append(Line[3].replace(' ',''))
-        if len(Line) >= 5:  #有日期，记录日期；无日期，记录为“-”
-            ArrivalDate.append(Line[4])
+        Owner.append(Line[OwnerIndex].replace(' ',''))
+        Goods.append(Line[GoodIndex].replace(' ',''))
+        Amount.append(Line[AmountIndex])
+        Port.append(Line[PortIndex].replace(' ',''))
+        if DateIndex:  #有日期，记录日期；无日期，记录为“-”
+            ArrivalDate.append(Line[DateIndex])
         else:
             ArrivalDate.append('-')
     print(u'已读取"\033[1;34;0m%s\033[0m"中的\033[1;34;0m%d\033[0m条数据.' % (SourceFileName, Sheet.nrows-1))
