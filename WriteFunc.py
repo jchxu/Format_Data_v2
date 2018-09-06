@@ -206,11 +206,10 @@ def WritePortsData(PortList,PortsData):
     WorkBook = xlsxwriter.Workbook(filename)
     Sheet1 = WorkBook.add_worksheet()
     Sheet1.freeze_panes(1, 0)
-    for i in range(len(PortsData)+1):
-        Sheet1.set_row(i,16)
     # 格式控制
     StyleTitle = WorkBook.add_format({'bold': 1, 'align': 'center', 'font_color': 'blue'})
     StyleCenter = WorkBook.add_format({'align': 'center'})
+    StyleDTCenter = WorkBook.add_format({'num_format':'yyyy/mm/dd'})
     StyleAmount = WorkBook.add_format({'num_format': '#,##0.00'})
     # 标题行
     Sheet1.write(0, 0, '原行号',StyleTitle)
@@ -219,10 +218,12 @@ def WritePortsData(PortList,PortsData):
     Sheet1.write(0, 3, '品种',StyleTitle)
     Sheet1.write(0, 4, '数量',StyleTitle)
     Sheet1.write(0, 5, '日期',StyleTitle)
+    # 列宽、行高
     Sheet1.set_column(0, 0, 8)
     Sheet1.set_column(1, 1, 12)
     Sheet1.set_column(2, 3, 15)
     Sheet1.set_column(4, 5, 12)
+    for i in range(len(PortsData)+1): Sheet1.set_row(i,16)
     # 数据行
     for i in range(len(PortsData)):
         Rec = PortsData[i]
@@ -231,6 +232,11 @@ def WritePortsData(PortList,PortsData):
         Sheet1.write(i+1,2,Rec[1])
         Sheet1.write(i+1,3,Rec[2])
         Sheet1.write(i+1,4,Rec[3],StyleAmount)
-        Sheet1.write(i+1,5,Rec[4],StyleCenter)
+        if Rec[4]:  #有日期
+            dt = datetime.datetime.strptime(Rec[4], '%Y%m%d')
+            Sheet1.write_datetime(i+1,5,dt,StyleDTCenter)
+        else:   #无日期
+            Sheet1.write(i + 1, 5, Rec[4], StyleCenter)
+    Sheet1.set_column(5,5,None,)
     WorkBook.close()
     print('汇总数据写入"%s"文件中.' % filename)
